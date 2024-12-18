@@ -1,0 +1,540 @@
+import tkinter as tk
+from tkinter import messagebox
+import random
+import time
+
+# Globals
+scores = {"easy": float('inf'), "medium": float('inf'), "hard": float('inf')}
+timer_start = None
+current_difficulty = None
+
+# Main application window
+root = tk.Tk()
+root.title("Sudoku Solver")
+
+# Frames for layout organization
+grid_frame = tk.Frame(root)  # Frame for Sudoku grid
+grid_frame.grid(row=0, column=0, padx=10, pady=10)
+
+button_frame = tk.Frame(root)  # Frame for buttons and controls
+button_frame.grid(row=1, column=0, pady=20)
+
+
+# Initialize Sudoku grid
+cells = []
+for i in range(9):
+    row = []
+    for j in range(9):
+        entry = tk.Entry(grid_frame, width=2, font=('Arial', 18), justify='center')
+        entry.grid(row=i, column=j, padx=5, pady=5)
+        row.append(entry)
+    cells.append(row)
+
+def initialize_grid():
+    """
+    Initialize the Sudoku grid for generating or solving puzzles.
+    Recreate the grid frame if it doesn't exist and add supporting widgets.
+    """
+    global grid_frame, cells, timer_label, start_timer_button
+
+    # Recreate the frame if it was destroyed
+    if not grid_frame or not grid_frame.winfo_exists():
+        grid_frame = tk.Frame(root)
+        grid_frame.grid(row=0, column=0, padx=10, pady=10)
+
+    # Reset the grid
+    cells = []
+    for i in range(9):
+        row = []
+        for j in range(9):
+            entry = tk.Entry(grid_frame, width=2, font=('Arial', 18), justify='center')
+            entry.grid(row=i, column=j, padx=5, pady=5)
+            row.append(entry)
+        cells.append(row)
+
+    # Add timer and start button
+    timer_label = tk.Label(root, text="Time: 0.0s", font=('Arial', 14))
+    timer_label.grid(row=1, column=0, columnspan=9, pady=10)
+
+    start_timer_button = tk.Button(root, text="Start", font=('Arial', 14), state='disabled', command=start_timer)
+    start_timer_button.grid(row=2, column=0, columnspan=9, pady=10)
+
+
+# Solve Sudoku logic
+def solve_sudoku(board):
+    for row in range(9):
+        for col in range(9):
+            if board[row][col] == 0:  # Find empty cell
+                for num in range(1, 10):  # Try numbers 1–9
+                    if is_valid_move(board, row, col, num):
+                        board[row][col] = num
+                        if solve_sudoku(board):  # Recursively solve
+                            return True
+                        board[row][col] = 0  # Backtrack
+                return False  # Trigger backtracking
+    return True
+
+def is_valid_move(board, row, col, num):
+    if num in board[row]:  # Check row
+        return False
+    if num in [board[i][col] for i in range(9)]:  # Check column
+        return False
+    start_row, start_col = 3 * (row // 3), 3 * (col // 3)  # Check 3x3 grid
+    for i in range(start_row, start_row + 3):
+        for j in range(start_col, start_col + 3):
+            if board[i][j] == num:
+                return False
+    return True
+
+def extract_board():
+    """
+    Extract the board from the GUI grid and return it as a 2D list.
+    """
+    if not cells:
+        raise RuntimeError("The Sudoku grid is not initialized.")
+
+    board = []
+    for i in range(9):
+        row = []
+        for j in range(9):
+            val = cells[i][j].get()
+            if val.isdigit():
+                row.append(int(val))  # Convert valid digits to integers
+            else:
+                row.append(0)  # Treat empty or invalid cells as 0
+        board.append(row)
+    return board
+
+def fill_board(board):
+    """
+    Fill the grid with the solved board and disable editing.
+    """
+    for i in range(9):
+        for j in range(9):
+            cells[i][j].delete(0, tk.END)  # Clear existing content
+            cells[i][j].insert(0, str(board[i][j]))  # Insert the solution
+            cells[i][j].config(state='disabled')  # Disable editing
+
+'''def solve_and_display():
+    """
+    Solve the current Sudoku board and display the result.
+    """
+    try:
+        # Ensure the cells grid is initialized and valid
+        if not cells or len(cells) != 9 or any(len(row) != 9 for row in cells):
+            messagebox.showerror("Error", "The Sudoku grid is not properly initialized.")
+            return
+
+        # Extract the board from the grid
+        board = extract_board()
+
+        # Validate the board
+        if not validate_board(board):
+            messagebox.showerror("Error", "Invalid board: Ensure all cells contain numbers between 0 and 9.")
+            return
+
+        # Solve the board
+        if solve_sudoku(board):  # Solve the board using backtracking
+            fill_board(board)  # Fill the board with the solution
+            messagebox.showinfo("Solved", "Sudoku solved successfully!")
+        else:
+            messagebox.showerror("Error", "No solution exists for the given Sudoku puzzle.")
+    except Exception as e:
+        messagebox.showerror("Error", f"An unexpected error occurred: {e}")'''
+
+
+def validate_input(value):
+    """
+    Validate individual cell input. Allow only single digits (0–9) or empty cells.
+    """
+    return value == "" or (value.isdigit() and 0 <= int(value) <= 9)
+
+def validate_board(board):
+    """
+    Validate the entire Sudoku board. Ensure all values are numbers between 0 and 9
+    and that there are no duplicates in rows, columns, or 3x3 subgrids.
+    """
+    # Check rows
+    for row in board:
+        if not validate_group(row):
+            return False
+
+    # Check columns
+    for col in zip(*board):  # Transpose rows into columns
+        if not validate_group(col):
+            return False
+
+    # Check 3x3 subgrids
+    for start_row in range(0, 9, 3):
+        for start_col in range(0, 9, 3):
+            subgrid = [
+                board[r][c]
+                for r in range(start_row, start_row + 3)
+                for c in range(start_col, start_col + 3)
+            ]
+            if not validate_group(subgrid):
+                return False
+
+    return True
+
+
+def validate_group(group):
+    """
+    Validate a group (row, column, or subgrid). Ensure no duplicates among numbers 1–9.
+    """
+    nums = [num for num in group if num != 0]  # Ignore empty cells (0)
+    return len(nums) == len(set(nums)) and all(0 <= num <= 9 for num in nums)
+
+
+def clear_board():
+    """
+    Clear all cells and allow editing.
+    """
+    for i in range(9):
+        for j in range(9):
+            cells[i][j].config(state='normal')  # Re-enable editing
+            cells[i][j].delete(0, tk.END)  # Clear the cell
+
+def import_board():
+    """Import a Sudoku board from a file."""
+    try:
+        with open("sudoku_board.txt", "r") as file:
+            lines = file.readlines()
+            for i, line in enumerate(lines):
+                numbers = list(map(int, line.strip().split()))
+                for j, num in enumerate(numbers):
+                    cells[i][j].delete(0, tk.END)
+                    if num != 0:
+                        cells[i][j].insert(0, str(num))
+                        cells[i][j].config(state='disabled')
+        messagebox.showinfo("Success", "Board imported successfully!")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to import board: {e}")
+
+def export_board():
+    """Export the current board to a file."""
+    try:
+        board = extract_board()
+        with open("sudoku_board.txt", "w") as file:
+            for row in board:
+                file.write(" ".join(map(str, row)) + "\n")
+        messagebox.showinfo("Success", "Board exported successfully!")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to export board: {e}")
+
+# Clear the grid
+def clear_board():
+    """
+    Clear all cells and allow editing.
+    """
+    for i in range(9):
+        for j in range(9):
+            cells[i][j].config(state='normal')
+            cells[i][j].delete(0, tk.END)
+
+# Generate an empty Sudoku board
+def generate_empty_board():
+    return [[0 for _ in range(9)] for _ in range(9)]
+
+# Fill the board with a random valid solution
+def fill_random_board(board):
+    """
+    Fill the board with a valid Sudoku solution using backtracking.
+    """
+    for i in range(9):
+        for j in range(9):
+            if board[i][j] == 0:  # Find an empty cell
+                nums = list(range(1, 10))  # Generate possible numbers
+                random.shuffle(nums)  # Shuffle for randomness
+
+                for num in nums:
+                    if is_valid_move(board, i, j, num):  # Check if the number is valid
+                        board[i][j] = num  # Place the number
+                        if fill_random_board(board):  # Recursively try to solve the board
+                            return True
+                        board[i][j] = 0  # Backtrack if it fails
+
+                return False  # Trigger backtracking if no valid numbers work
+    return True  # Return True if the board is fully solved
+
+# Remove cells to create a puzzle
+def remove_cells(board, difficulty):
+    """
+    Remove cells from a fully solved board based on difficulty.
+    """
+    cells_to_remove = {"easy": 30, "medium": 45, "hard": 60}  # Number of cells to remove
+    remove_count = cells_to_remove.get(difficulty, 45)  # Default to 'medium' if difficulty is invalid
+
+    print(f"DEBUG: Removing {remove_count} cells for difficulty '{difficulty}'.")
+
+    while remove_count > 0:
+        row, col = random.randint(0, 8), random.randint(0, 8)  # Randomly select a cell
+        if board[row][col] != 0:  # If the cell is not already empty
+            board[row][col] = 0  # Empty the cell
+            remove_count -= 1
+
+    return board
+
+# Generate a random Sudoku puzzle for a given difficulty
+def generate_random_puzzle(difficulty):
+    """
+    Generate a random Sudoku puzzle for the given difficulty.
+    """
+    board = generate_empty_board()  # Start with an empty board
+
+    if not fill_random_board(board):  # Fill the board with a valid solution
+        print("DEBUG: Failed to fill the board with a valid Sudoku solution.")
+        raise ValueError("Failed to generate a valid Sudoku puzzle.")  # Safeguard for edge cases
+
+    print("DEBUG: Successfully filled the board. Now removing cells...")
+    return remove_cells(board, difficulty)  # Remove cells based on difficulty
+
+
+# Generate and display a puzzle
+def generate_puzzle(difficulty):
+    """
+    Generate and display a random puzzle based on the selected difficulty.
+    """
+    try:
+        initialize_grid()  # Ensure the grid exists and is valid
+
+        board = generate_random_puzzle(difficulty)  # Generate the puzzle
+        for i in range(9):
+            for j in range(9):
+                cells[i][j].config(state='normal')  # Enable editing
+                cells[i][j].delete(0, tk.END)  # Clear the cell
+                if board[i][j] != 0:  # If not empty, insert the value
+                    cells[i][j].insert(0, str(board[i][j]))
+                    cells[i][j].config(state='disabled')  # Disable editing for pre-filled cells
+                else:
+                    cells[i][j].config(state='disabled')  # Initially disable editable cells
+
+        # Reset timer and button states
+        timer_label.config(text="Time: 0.0s")  # Reset timer
+        start_timer_button.config(state='normal', text="Start")  # Enable Start button
+
+        global current_difficulty
+        current_difficulty = difficulty
+
+        print(f"DEBUG: Successfully generated puzzle for difficulty '{difficulty}'.")
+
+    except Exception as e:
+        print(f"DEBUG: Exception occurred in generate_puzzle: {e}")
+        tk.Label(root, text=f"Error generating puzzle: {e}", font=('Arial', 14), fg="red").grid(row=3, column=0, columnspan=9, pady=10)
+
+# Start the game with the selected difficulty
+def start_game(difficulty):
+    refresh_screen()
+    create_sudoku_ui()
+    generate_puzzle(difficulty)
+
+# Refresh the GUI screen
+def refresh_screen(preserve_grid=False):
+    """
+    Clear all widgets from the screen, optionally preserving the Sudoku grid.
+    """
+    for widget in root.winfo_children():
+        if preserve_grid and widget == grid_frame:
+            continue  # Skip destroying the grid frame
+        widget.destroy()
+
+# Create the main menu
+def show_main_menu():
+    """
+    Show the main menu with options for generating, importing, or solving puzzles.
+    """
+    refresh_screen()
+    tk.Label(root, text="Sudoku Solver", font=('Arial', 36)).pack(pady=20)
+    tk.Button(root, text="Generate Puzzle", font=('Arial', 18), command=show_difficulty_selection).pack(pady=10)
+    tk.Button(root, text="Import Board", font=('Arial', 18), command=import_board).pack(pady=10)
+    tk.Button(root, text="Export Board", font=('Arial', 18), command=export_board).pack(pady=10)
+    tk.Button(root, text="Solve Custom Puzzle", font=('Arial', 18), command=show_custom_solver).pack(pady=10)
+
+def show_custom_solver():
+    """
+    Show the editable Sudoku grid for users to input their custom puzzle.
+    """
+    refresh_screen()
+
+    # Create the validation command
+    vcmd = root.register(validate_input)
+
+    # Create the Sudoku grid
+    global cells
+    cells = []
+    for i in range(9):
+        row = []
+        for j in range(9):
+            entry = tk.Entry(root, width=2, font=('Arial', 18), justify='center', validate="key", validatecommand=(vcmd, "%P"))
+            entry.grid(row=i, column=j, padx=5, pady=5)
+            row.append(entry)
+        cells.append(row)
+
+    # Add Solve, Clear, and Back buttons
+    tk.Button(root, text="Solve", font=('Arial', 14), command=solve_custom_puzzle).grid(row=10, column=0, columnspan=3, pady=10)
+    tk.Button(root, text="Clear", font=('Arial', 14), command=clear_board).grid(row=10, column=3, columnspan=3, pady=10)
+    tk.Button(root, text="Back", font=('Arial', 14), command=show_main_menu).grid(row=10, column=6, columnspan=3, pady=10)
+
+
+def solve_custom_puzzle():
+    """
+    Solve the user-entered custom Sudoku puzzle and display the solution in the same grid.
+    If no solution exists, display a message below the grid.
+    """
+    try:
+        board = extract_board()  # Extract the current board state
+
+        # Attempt to solve the puzzle
+        if solve_sudoku(board):
+            fill_board(board)  # Display the solution
+            # Add a label below the grid to indicate success
+            tk.Label(root, text="Solution displayed successfully.", font=('Arial', 14), fg="green").grid(row=11, column=0, columnspan=9, pady=10)
+        else:
+            # Add a label below the grid to indicate no solution exists
+            tk.Label(root, text="No solution exists for this puzzle.", font=('Arial', 14), fg="red").grid(row=11, column=0, columnspan=9, pady=10)
+    except Exception as e:
+        # Catch unexpected errors (debugging safeguard)
+        tk.Label(root, text=f"An unexpected error occurred: {e}", font=('Arial', 14), fg="red").grid(row=11, column=0, columnspan=9, pady=10)
+
+
+# Display difficulty selection
+def show_difficulty_selection():
+    """
+    Show the difficulty selection screen.
+    """
+    refresh_screen()  # Clear the main screen while preserving the grid
+
+    # Add a label for the title
+    tk.Label(root, text="Select Difficulty", font=('Arial', 24)).grid(row=0, column=0, columnspan=3, pady=20)
+
+    # Difficulty buttons
+    tk.Button(root, text="Easy", font=('Arial', 18), command=lambda: generate_puzzle("easy")).grid(row=1, column=0, padx=10, pady=10)
+    tk.Button(root, text="Medium", font=('Arial', 18), command=lambda: generate_puzzle("medium")).grid(row=1, column=1, padx=10, pady=10)
+    tk.Button(root, text="Hard", font=('Arial', 18), command=lambda: generate_puzzle("hard")).grid(row=1, column=2, padx=10, pady=10)
+
+    # Back button
+    tk.Button(root, text="Back", font=('Arial', 14), command=show_main_menu).grid(row=2, column=0, columnspan=3, pady=20)
+
+# Create the Sudoku grid UI
+def create_sudoku_ui():
+    """
+    Create the Sudoku grid and controls if not already created.
+    """
+    global cells, timer_label, start_timer_button
+    if not cells:  # Only create the grid if it doesn't already exist
+        cells = []
+        for i in range(9):
+            row = []
+            for j in range(9):
+                entry = tk.Entry(root, width=2, font=('Arial', 18), justify='center')
+                entry.grid(row=i, column=j, padx=5, pady=5)
+                row.append(entry)
+            cells.append(row)
+
+    # Timer and controls
+    start_timer_button = tk.Button(root, text="Start", font=('Arial', 14), state='disabled', command=start_timer)
+    start_timer_button.grid(row=10, column=0, columnspan=3, pady=10)
+
+    timer_label = tk.Label(root, text="Time: 0.0s", font=('Arial', 14))
+    timer_label.grid(row=10, column=3, columnspan=6, pady=10)
+
+    tk.Button(root, text="Back", font=('Arial', 14), command=show_main_menu).grid(row=11, column=0, columnspan=9, pady=10)
+
+def validate_solution():
+    """
+    Validate the current Sudoku grid. Ensure it satisfies Sudoku rules and is complete.
+    """
+    board = extract_board()
+
+    # Check rows
+    for row in board:
+        if not validate_group(row):  # Validate the row
+            return False
+
+    # Check columns
+    for col in zip(*board):  # Transpose rows into columns
+        if not validate_group(col):  # Validate the column
+            return False
+
+    # Check 3x3 subgrids
+    for start_row in range(0, 9, 3):
+        for start_col in range(0, 9, 3):
+            subgrid = [
+                board[r][c]
+                for r in range(start_row, start_row + 3)
+                for c in range(start_col, start_col + 3)
+            ]
+            if not validate_group(subgrid):  # Validate the subgrid
+                return False
+
+    # Ensure the board is fully filled (no empty cells)
+    for row in board:
+        if any(cell == 0 for cell in row):  # Check for unfilled cells
+            return False
+    print("DEBUG: Board being validated:")
+    for row in board:
+        print(row)
+    print("DEBUG: Validation result:", result)
+
+    return True  # All checks passed, the solution is valid
+
+def validate_group(group):
+    """
+    Validate a group (row, column, or subgrid). Ensure no duplicates among numbers 1–9.
+    """
+    nums = [num for num in group if num != 0]  # Ignore empty cells (0)
+    return len(nums) == len(set(nums)) and all(1 <= num <= 9 for num in nums)
+
+# Timer functionality
+def start_timer():
+    """
+    Start the timer and enable editing for the grid.
+    """
+    global timer_start
+    timer_start = time.time()
+
+    # Enable all editable cells
+    for i in range(9):
+        for j in range(9):
+            if cells[i][j].get() == "":  # Only enable empty cells
+                cells[i][j].config(state='normal')
+
+    start_timer_button.config(text="Finish", command=stop_timer)  # Change button to "Finish"
+
+def stop_timer():
+    """
+    Stop the timer, validate the Sudoku grid, and display the result below the grid.
+    """
+    global timer_start
+    elapsed_time = round(time.time() - timer_start, 2)
+
+    # Disable all cells after finishing
+    for i in range(9):
+        for j in range(9):
+            cells[i][j].config(state='disabled')
+
+    # Validate the user's solution
+    if validate_solution():
+        # Check for a new high score
+        global scores
+        if elapsed_time < scores[current_difficulty]:
+            scores[current_difficulty] = elapsed_time
+            score_message = f"New high score for {current_difficulty}: {elapsed_time} seconds!"
+        else:
+            score_message = f"Time taken: {elapsed_time} seconds. Great job!"
+
+        # Display success message
+        score_label = tk.Label(root, text=score_message, font=('Arial', 14), fg="green")
+        score_label.grid(row=3, column=0, columnspan=9, pady=10)
+    else:
+        # Display error message
+        error_label = tk.Label(root, text="Puzzle is incomplete or incorrect.", font=('Arial', 14), fg="red")
+        error_label.grid(row=3, column=0, columnspan=9, pady=10)
+
+    start_timer_button.config(state='disabled')  # Disable the Finish button
+
+# Initialize the main menu
+show_main_menu()
+
+# Start the Tkinter event loop
+root.mainloop()
