@@ -2,11 +2,18 @@ import tkinter as tk
 from tkinter import messagebox
 import random
 import time
+import os
 
 # Globals
 scores = {"easy": float('inf'), "medium": float('inf'), "hard": float('inf')}
 timer_start = None
 current_difficulty = None
+LEADERBOARD_FILE = "leaderboard.txt"
+is_paused = False  # Tracks if the timer is paused
+paused_time = 0    # Time elapsed before pausing
+hints_used = 0     # Tracks the number of hints used
+hints_limit = {"easy": 3, "medium": 2, "hard": 1}  # Hint limits per difficulty
+solved_board = None  # Store the solved board for hints
 
 # Main application window
 root = tk.Tk()
@@ -275,6 +282,29 @@ def remove_cells(board, difficulty):
 
     return board
 
+def provide_hint():
+    """
+    Provide a hint by filling one empty cell with the correct value.
+    """
+    global hints_used, solved_board
+
+    # Check if hints are available
+    if hints_used >= hints_limit[current_difficulty]:
+        messagebox.showinfo("Hint Limit Reached", "No more hints available!")
+        return
+
+    # Find an empty cell and fill it with the correct value
+    for i in range(9):
+        for j in range(9):
+            if cells[i][j].get() == "":
+                cells[i][j].insert(0, str(solved_board[i][j]))  # Fill correct value
+                cells[i][j].config(state='disabled', fg="blue")  # Mark as a hint
+                hints_used += 1
+                return
+
+    messagebox.showinfo("No Empty Cells", "The grid is already complete!")
+
+
 # Generate a random Sudoku puzzle for a given difficulty
 def generate_random_puzzle(difficulty):
     """
@@ -293,34 +323,77 @@ def generate_random_puzzle(difficulty):
 # Generate and display a puzzle
 def generate_puzzle(difficulty):
     """
-    Generate and display a random puzzle based on the selected difficulty.
+    Generate and display a random puzzle based on the selected difficulty, with hints and timer pause/resume support.
     """
     try:
+        # Clear the screen to remove unwanted widgets
+        refresh_screen()  # Ensure no difficulty buttons or other widgets remain
+
         initialize_grid()  # Ensure the grid exists and is valid
 
-        board = generate_random_puzzle(difficulty)  # Generate the puzzle
+        # Generate the solved board for hints
+        global solved_board, hints_used, current_difficulty, is_paused
+        solved_board = generate_empty_board()
+        fill_random_board(solved_board)  # Create a valid solved board
+        hints_used = 0  # Reset the hints counter
+        current_difficulty = difficulty  # Track current difficulty
+        is_paused = False  # Reset pause state
+
+        # Generate the puzzle based on difficulty
+        board = remove_cells([row[:] for row in solved_board], difficulty)  # Copy solved board and remove cells
         for i in range(9):
             for j in range(9):
                 cells[i][j].config(state='normal')  # Enable editing
                 cells[i][j].delete(0, tk.END)  # Clear the cell
-                if board[i][j] != 0:  # If not empty, insert the value
+                if board[i][j] != 0:  # Fill pre-defined cells
                     cells[i][j].insert(0, str(board[i][j]))
-                    cells[i][j].config(state='disabled')  # Disable editing for pre-filled cells
-                else:
-                    cells[i][j].config(state='disabled')  # Initially disable editable cells
+                    cells[i][j].config(state='disabled')  # Disable pre-filled cells
 
-        # Reset timer and button states
+        # Add timer label
         timer_label.config(text="Time: 0.0s")  # Reset timer
-        start_timer_button.config(state='normal', text="Start")  # Enable Start button
+        timer_label.grid(row=1, column=0, columnspan=3, pady=10)
 
-        global current_difficulty
-        current_difficulty = difficulty
+        # Add buttons in a new frame to ensure proper alignment
+        button_frame = tk.Frame(root)
+        button_frame.grid(row=2, column=0, columnspan=3, pady=20)
+
+        # Start button
+        global start_timer_button
+        start_timer_button = tk.Button(button_frame, text="Start", font=('Arial', 14), command=start_timer)
+        start_timer_button.grid(row=0, column=0, padx=10)
+
+        # Retry button (initially disabled)
+        global retry_button
+        retry_button = tk.Button(
+            button_frame,
+            text="Retry",
+            font=('Arial', 14),
+            state='disabled',  # Disabled initially
+            command=lambda: generate_puzzle(difficulty)
+        )
+        retry_button.grid(row=0, column=1, padx=10)
+
+        # Hint button
+        tk.Button(button_frame, text="Hint", font=('Arial', 14), command=provide_hint).grid(row=0, column=2, padx=10)
+
+        # Pause/Resume button
+        global pause_button
+        pause_button = tk.Button(button_frame, text="Pause", font=('Arial', 14), state='disabled', command=pause_timer)
+        pause_button.grid(row=0, column=3, padx=10)
+
+        # Back button
+        tk.Button(button_frame, text="Back", font=('Arial', 14), command=show_difficulty_selection).grid(
+            row=0, column=4, padx=10
+        )
 
         print(f"DEBUG: Successfully generated puzzle for difficulty '{difficulty}'.")
 
     except Exception as e:
         print(f"DEBUG: Exception occurred in generate_puzzle: {e}")
-        tk.Label(root, text=f"Error generating puzzle: {e}", font=('Arial', 14), fg="red").grid(row=3, column=0, columnspan=9, pady=10)
+        tk.Label(root, text=f"Error generating puzzle: {e}", font=('Arial', 14), fg="red").grid(
+            row=3, column=0, columnspan=9, pady=10
+        )
+
 
 # Start the game with the selected difficulty
 def start_game(difficulty):
@@ -346,6 +419,7 @@ def show_main_menu():
     refresh_screen()
     tk.Label(root, text="Sudoku Solver", font=('Arial', 36)).pack(pady=20)
     tk.Button(root, text="Generate Puzzle", font=('Arial', 18), command=show_difficulty_selection).pack(pady=10)
+    tk.Button(root, text="Leaderboard", font=('Arial', 18), command=show_leaderboard).pack(pady=10)  # New button
     tk.Button(root, text="Import Board", font=('Arial', 18), command=import_board).pack(pady=10)
     tk.Button(root, text="Export Board", font=('Arial', 18), command=export_board).pack(pady=10)
     tk.Button(root, text="Solve Custom Puzzle", font=('Arial', 18), command=show_custom_solver).pack(pady=10)
@@ -415,6 +489,7 @@ def show_difficulty_selection():
     # Back button
     tk.Button(root, text="Back", font=('Arial', 14), command=show_main_menu).grid(row=2, column=0, columnspan=3, pady=20)
 
+
 # Create the Sudoku grid UI
 def create_sudoku_ui():
     """
@@ -449,11 +524,13 @@ def validate_solution():
     # Check rows
     for row in board:
         if not validate_group(row):  # Validate the row
+            print("DEBUG: Row validation failed:", row)
             return False
 
     # Check columns
     for col in zip(*board):  # Transpose rows into columns
         if not validate_group(col):  # Validate the column
+            print("DEBUG: Column validation failed:", list(col))
             return False
 
     # Check 3x3 subgrids
@@ -465,18 +542,18 @@ def validate_solution():
                 for c in range(start_col, start_col + 3)
             ]
             if not validate_group(subgrid):  # Validate the subgrid
+                print("DEBUG: Subgrid validation failed:", subgrid)
                 return False
 
     # Ensure the board is fully filled (no empty cells)
     for row in board:
         if any(cell == 0 for cell in row):  # Check for unfilled cells
+            print("DEBUG: Board is incomplete:", board)
             return False
-    print("DEBUG: Board being validated:")
-    for row in board:
-        print(row)
-    print("DEBUG: Validation result:", result)
 
+    print("DEBUG: Board validation passed.")
     return True  # All checks passed, the solution is valid
+
 
 def validate_group(group):
     """
@@ -485,13 +562,112 @@ def validate_group(group):
     nums = [num for num in group if num != 0]  # Ignore empty cells (0)
     return len(nums) == len(set(nums)) and all(1 <= num <= 9 for num in nums)
 
+def save_score(time_taken, difficulty):
+    """
+    Save the player's score to the leaderboard file and sort it.
+    """
+    # Ensure the file exists
+    if not os.path.exists(LEADERBOARD_FILE):
+        with open(LEADERBOARD_FILE, "w") as file:
+            pass  # Create an empty file if it doesn't exist
+
+    # Append the new score
+    with open(LEADERBOARD_FILE, "a") as file:
+        file.write(f"{time_taken:.2f} {difficulty}\n")
+
+    # Sort the leaderboard
+    sort_leaderboard()
+
+
+def sort_leaderboard():
+    """
+    Sort the leaderboard file by time taken in ascending order.
+    """
+    with open(LEADERBOARD_FILE, "r") as file:
+        lines = file.readlines()
+
+    # Parse and sort scores
+    scores = [line.strip().split() for line in lines if line.strip()]
+    scores = sorted(scores, key=lambda x: float(x[0]))  # Sort by time
+
+    # Save the sorted scores back to the file
+    with open(LEADERBOARD_FILE, "w") as file:
+        for score in scores:
+            file.write(f"{score[0]} {score[1]}\n")
+
+
+def show_leaderboard():
+    """
+    Display the leaderboard in the current screen.
+    """
+    refresh_screen()  # Clear all existing widgets
+
+    tk.Label(root, text="Leaderboard", font=('Arial', 24)).grid(row=0, column=0, columnspan=3, pady=20)
+
+    # Read and display the scores
+    if os.path.exists(LEADERBOARD_FILE):
+        with open(LEADERBOARD_FILE, "r") as file:
+            lines = file.readlines()
+
+        scores = [line.strip().split() for line in lines if line.strip()]
+        scores = sorted(scores, key=lambda x: float(x[0]))  # Sort by time
+
+        # Display each score in a grid
+        for idx, (time_taken, difficulty) in enumerate(scores[:10], 1):  # Top 10 scores
+            tk.Label(root, text=f"{idx}. {time_taken} seconds ({difficulty})", font=('Arial', 14)).grid(
+                row=idx, column=0, columnspan=3, pady=5)
+    else:
+        tk.Label(root, text="No scores yet!", font=('Arial', 14)).grid(row=1, column=0, columnspan=3, pady=10)
+
+    # Add a Back button to return to the main menu
+    tk.Button(root, text="Back", font=('Arial', 14), command=show_main_menu).grid(row=12, column=0, columnspan=3, pady=20)
+
+
+def highlight_conflicts(row, col, value):
+    """
+    Highlight the cell with a red background if it violates Sudoku rules.
+    Reset to white if there are no conflicts.
+    """
+    board = extract_board()
+
+    # Temporarily update the board with the current value
+    board[row][col] = value
+
+    # Check for validity
+    if is_valid_move(board, row, col, value):
+        cells[row][col].config(bg="white")  # No conflicts
+    else:
+        cells[row][col].config(bg="red")  # Highlight conflicts
+
+def pause_timer():
+    """
+    Pause the timer and allow resumption.
+    """
+    global is_paused, paused_time
+    if not is_paused:
+        paused_time = time.time() - timer_start  # Record elapsed time
+        pause_button.config(text="Resume", command=resume_timer)  # Update button text
+        is_paused = True
+
+
+def resume_timer():
+    """
+    Resume the paused timer.
+    """
+    global timer_start, is_paused
+    timer_start = time.time() - paused_time  # Adjust start time
+    pause_button.config(text="Pause", command=pause_timer)  # Update button text
+    is_paused = False
+
+
 # Timer functionality
 def start_timer():
     """
-    Start the timer and enable editing for the grid.
+    Start the timer, enable editing for the grid, and allow pausing.
     """
-    global timer_start
-    timer_start = time.time()
+    global timer_start, is_paused
+    timer_start = time.time()  # Record the start time
+    is_paused = False  # Reset pause state
 
     # Enable all editable cells
     for i in range(9):
@@ -499,11 +675,13 @@ def start_timer():
             if cells[i][j].get() == "":  # Only enable empty cells
                 cells[i][j].config(state='normal')
 
+    # Configure buttons
     start_timer_button.config(text="Finish", command=stop_timer)  # Change button to "Finish"
+    pause_button.config(text="Pause", state='normal', command=pause_timer)  # Enable Pause button
 
 def stop_timer():
     """
-    Stop the timer, validate the Sudoku grid, and display the result below the grid.
+    Stop the timer, validate the Sudoku grid, and provide visual feedback.
     """
     global timer_start
     elapsed_time = round(time.time() - timer_start, 2)
@@ -515,23 +693,44 @@ def stop_timer():
 
     # Validate the user's solution
     if validate_solution():
-        # Check for a new high score
-        global scores
-        if elapsed_time < scores[current_difficulty]:
-            scores[current_difficulty] = elapsed_time
-            score_message = f"New high score for {current_difficulty}: {elapsed_time} seconds!"
-        else:
-            score_message = f"Time taken: {elapsed_time} seconds. Great job!"
+        # Change the grid background to green
+        for row in cells:
+            for cell in row:
+                cell.config(bg="lightgreen")
 
-        # Display success message
-        score_label = tk.Label(root, text=score_message, font=('Arial', 14), fg="green")
-        score_label.grid(row=3, column=0, columnspan=9, pady=10)
+        # Display success message with confetti animation
+        display_success(elapsed_time)
+
+        # Save the score to the leaderboard
+        save_score(elapsed_time, current_difficulty)
     else:
-        # Display error message
-        error_label = tk.Label(root, text="Puzzle is incomplete or incorrect.", font=('Arial', 14), fg="red")
-        error_label.grid(row=3, column=0, columnspan=9, pady=10)
+        # Highlight incomplete or incorrect message
+        tk.Label(root, text="Puzzle is incomplete or incorrect.", font=('Arial', 14), fg="red").grid(
+            row=3, column=0, columnspan=9, pady=10
+        )
 
-    start_timer_button.config(state='disabled')  # Disable the Finish button
+    retry_button.config(state='normal')  # Allow retry
+    start_timer_button.config(state='disabled')  # Disable Start button
+
+
+def display_success(elapsed_time):
+    """
+    Display an animated success message for completion.
+    """
+    # Success Label
+    success_label = tk.Label(root, text=f"Solved in {elapsed_time:.2f} seconds!", font=('Arial', 18), fg="green")
+    success_label.grid(row=3, column=0, columnspan=9, pady=10)
+
+    # Confetti animation (placeholder)
+    def confetti():
+        for _ in range(10):  # Generate 10 confetti effects
+            x, y = random.randint(50, 450), random.randint(50, 450)
+            confetti_piece = tk.Label(root, text="*", font=('Arial', 18), fg="blue")
+            confetti_piece.place(x=x, y=y)
+            root.after(500, confetti_piece.destroy)  # Remove after 500ms
+
+    root.after(100, confetti)
+
 
 # Initialize the main menu
 show_main_menu()
