@@ -14,10 +14,36 @@ paused_time = 0    # Time elapsed before pausing
 hints_used = 0     # Tracks the number of hints used
 hints_limit = {"easy": 3, "medium": 2, "hard": 1}  # Hint limits per difficulty
 solved_board = None  # Store the solved board for hints
+hint_message_label = None  # Placeholder for the hint message label
+
+# Theme configurations
+# Global theme configurations
+current_theme = "light"
+themes = {
+    "light": {
+        "bg": "white",
+        "fg": "black",
+        "cell_bg": "white",
+        "cell_fg": "black",
+        "button_bg": "lightgray",
+        "button_fg": "black",
+    },
+    "dark": {
+        "bg": "black",
+        "fg": "white",
+        "cell_bg": "#333333",
+        "cell_fg": "white",
+        "button_bg": "#555555",
+        "button_fg": "white",
+    }
+}
+
 
 # Main application window
 root = tk.Tk()
 root.title("Sudoku Solver")
+root.geometry("400x600")  # Fixed size
+root.resizable(False, False)  # Prevent resizing
 
 # Frames for layout organization
 grid_frame = tk.Frame(root)  # Frame for Sudoku grid
@@ -285,12 +311,13 @@ def remove_cells(board, difficulty):
 def provide_hint():
     """
     Provide a hint by filling one empty cell with the correct value.
+    Update the hint message label when hints are used or unavailable.
     """
     global hints_used, solved_board
 
     # Check if hints are available
     if hints_used >= hints_limit[current_difficulty]:
-        messagebox.showinfo("Hint Limit Reached", "No more hints available!")
+        hint_message_label.config(text="Hint limit reached!", fg="red")  # Show limit message
         return
 
     # Find an empty cell and fill it with the correct value
@@ -300,9 +327,14 @@ def provide_hint():
                 cells[i][j].insert(0, str(solved_board[i][j]))  # Fill correct value
                 cells[i][j].config(state='disabled', fg="blue")  # Mark as a hint
                 hints_used += 1
+                hint_message_label.config(
+                    text=f"Hints available: {hints_limit[current_difficulty] - hints_used}/{hints_limit[current_difficulty]}",
+                    fg="green"
+                )
                 return
 
-    messagebox.showinfo("No Empty Cells", "The grid is already complete!")
+    # If no empty cells are found, update the message
+    hint_message_label.config(text="No empty cells to hint!", fg="blue")
 
 
 # Generate a random Sudoku puzzle for a given difficulty
@@ -327,33 +359,33 @@ def generate_puzzle(difficulty):
     """
     try:
         # Clear the screen to remove unwanted widgets
-        refresh_screen()  # Ensure no difficulty buttons or other widgets remain
+        refresh_screen()
 
-        initialize_grid()  # Ensure the grid exists and is valid
+        initialize_grid()
 
         # Generate the solved board for hints
-        global solved_board, hints_used, current_difficulty, is_paused
+        global solved_board, hints_used, current_difficulty, is_paused, hint_message_label
         solved_board = generate_empty_board()
-        fill_random_board(solved_board)  # Create a valid solved board
-        hints_used = 0  # Reset the hints counter
-        current_difficulty = difficulty  # Track current difficulty
-        is_paused = False  # Reset pause state
+        fill_random_board(solved_board)
+        hints_used = 0
+        current_difficulty = difficulty
+        is_paused = False
 
         # Generate the puzzle based on difficulty
-        board = remove_cells([row[:] for row in solved_board], difficulty)  # Copy solved board and remove cells
+        board = remove_cells([row[:] for row in solved_board], difficulty)
         for i in range(9):
             for j in range(9):
-                cells[i][j].config(state='normal')  # Enable editing
-                cells[i][j].delete(0, tk.END)  # Clear the cell
-                if board[i][j] != 0:  # Fill pre-defined cells
+                cells[i][j].config(state='normal')
+                cells[i][j].delete(0, tk.END)
+                if board[i][j] != 0:
                     cells[i][j].insert(0, str(board[i][j]))
-                    cells[i][j].config(state='disabled')  # Disable pre-filled cells
+                    cells[i][j].config(state='disabled')
 
         # Add timer label
-        timer_label.config(text="Time: 0.0s")  # Reset timer
+        timer_label.config(text="Time: 0.0s")
         timer_label.grid(row=1, column=0, columnspan=3, pady=10)
 
-        # Add buttons in a new frame to ensure proper alignment
+        # Add buttons in a new frame
         button_frame = tk.Frame(root)
         button_frame.grid(row=2, column=0, columnspan=3, pady=20)
 
@@ -368,15 +400,17 @@ def generate_puzzle(difficulty):
             button_frame,
             text="Retry",
             font=('Arial', 14),
-            state='disabled',  # Disabled initially
+            state='disabled',
             command=lambda: generate_puzzle(difficulty)
         )
         retry_button.grid(row=0, column=1, padx=10)
 
-        # Hint button
-        tk.Button(button_frame, text="Hint", font=('Arial', 14), command=provide_hint).grid(row=0, column=2, padx=10)
+        # Hint button (initially disabled)
+        global hint_button
+        hint_button = tk.Button(button_frame, text="Hint", font=('Arial', 14), state='disabled', command=provide_hint)
+        hint_button.grid(row=0, column=2, padx=10)
 
-        # Pause/Resume button
+        # Pause/Resume button (initially disabled)
         global pause_button
         pause_button = tk.Button(button_frame, text="Pause", font=('Arial', 14), state='disabled', command=pause_timer)
         pause_button.grid(row=0, column=3, padx=10)
@@ -386,6 +420,14 @@ def generate_puzzle(difficulty):
             row=0, column=4, padx=10
         )
 
+        # Add hint message label at the bottom of the screen
+        hint_message_label = tk.Label(root, text="Hints available: 0/0", font=('Arial', 12))
+        hint_message_label.grid(row=4, column=0, columnspan=3, pady=10)  # Row 4 ensures it's at the bottom
+        hint_message_label.config(
+            text=f"Hints available: {hints_limit[current_difficulty] - hints_used}/{hints_limit[current_difficulty]}",
+            fg="green"
+        )
+
         print(f"DEBUG: Successfully generated puzzle for difficulty '{difficulty}'.")
 
     except Exception as e:
@@ -393,7 +435,6 @@ def generate_puzzle(difficulty):
         tk.Label(root, text=f"Error generating puzzle: {e}", font=('Arial', 14), fg="red").grid(
             row=3, column=0, columnspan=9, pady=10
         )
-
 
 # Start the game with the selected difficulty
 def start_game(difficulty):
@@ -423,6 +464,7 @@ def show_main_menu():
     tk.Button(root, text="Import Board", font=('Arial', 18), command=import_board).pack(pady=10)
     tk.Button(root, text="Export Board", font=('Arial', 18), command=export_board).pack(pady=10)
     tk.Button(root, text="Solve Custom Puzzle", font=('Arial', 18), command=show_custom_solver).pack(pady=10)
+
 
 def show_custom_solver():
     """
@@ -639,9 +681,19 @@ def highlight_conflicts(row, col, value):
     else:
         cells[row][col].config(bg="red")  # Highlight conflicts
 
+def update_timer():
+    """
+    Dynamically update the timer label every 100 milliseconds.
+    """
+    if not is_paused:
+        elapsed_time = round(time.time() - timer_start, 1)  # Calculate elapsed time
+        timer_label.config(text=f"Time: {elapsed_time}s")  # Update timer label
+        root.after(100, update_timer)  # Schedule the next update
+        
+
 def pause_timer():
     """
-    Pause the timer and allow resumption.
+    Pause the timer and stop dynamic updates.
     """
     global is_paused, paused_time
     if not is_paused:
@@ -652,18 +704,19 @@ def pause_timer():
 
 def resume_timer():
     """
-    Resume the paused timer.
+    Resume the paused timer and restart dynamic updates.
     """
     global timer_start, is_paused
     timer_start = time.time() - paused_time  # Adjust start time
     pause_button.config(text="Pause", command=pause_timer)  # Update button text
     is_paused = False
-
+    update_timer()  # Restart updating the timer dynamically
 
 # Timer functionality
 def start_timer():
     """
-    Start the timer, enable editing for the grid, and allow pausing.
+    Start the timer, enable editing for the grid, and activate Hint and Pause buttons.
+    Dynamically update the timer.
     """
     global timer_start, is_paused
     timer_start = time.time()  # Record the start time
@@ -675,16 +728,23 @@ def start_timer():
             if cells[i][j].get() == "":  # Only enable empty cells
                 cells[i][j].config(state='normal')
 
-    # Configure buttons
+    # Activate Hint and Pause buttons
+    hint_button.config(state='normal')  # Enable Hint button
+    pause_button.config(state='normal')  # Enable Pause button
+
+    # Configure Start button
     start_timer_button.config(text="Finish", command=stop_timer)  # Change button to "Finish"
-    pause_button.config(text="Pause", state='normal', command=pause_timer)  # Enable Pause button
+
+    # Start updating the timer label
+    update_timer()
 
 def stop_timer():
     """
     Stop the timer, validate the Sudoku grid, and provide visual feedback.
     """
-    global timer_start
-    elapsed_time = round(time.time() - timer_start, 2)
+    global timer_start, is_paused
+    is_paused = True  # Stop timer updates
+    elapsed_time = round(time.time() - timer_start, 2)  # Calculate final time
 
     # Disable all cells after finishing
     for i in range(9):
